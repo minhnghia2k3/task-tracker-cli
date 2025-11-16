@@ -1,9 +1,12 @@
 package main
 
 import (
+	"minhnghia2k3/task-tracker-cli/internal/task"
 	"os"
 	"testing"
 )
+
+const filePath = "/Users/nghia.mle/Developer/pet-projects/task-tracker-cli/task_list.json"
 
 func TestAddTask(t *testing.T) {
 	tests := []struct {
@@ -18,13 +21,12 @@ func TestAddTask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileName := "test_add_task.json"
-			defer os.Remove(fileName)
+			os.Remove(filePath)       // Clean up before test
+			defer os.Remove(filePath) // Clean up after test
+			task.AddTask(tt.taskName)
 
-			addTask(tt.taskName, fileName)
-
-			var tasks []Task
-			loadTasks(fileName, &tasks)
+			var tasks []task.Task
+			task.LoadTasks(&tasks)
 
 			if len(tasks) != 1 {
 				t.Errorf("Expected 1 task, got %d", len(tasks))
@@ -35,8 +37,8 @@ func TestAddTask(t *testing.T) {
 			if tasks[0].Name != tt.expectedName {
 				t.Errorf("Expected name '%s', got '%s'", tt.expectedName, tasks[0].Name)
 			}
-			if tasks[0].Status != TODO {
-				t.Errorf("Expected status TODO, got %s", tasks[0].Status)
+			if tasks[0].Status != task.TASK_STATUS_TODO {
+				t.Errorf("Expected status TODO got %s", tasks[0].Status)
 			}
 		})
 	}
@@ -47,27 +49,25 @@ func TestUpdateTask(t *testing.T) {
 		name           string
 		taskID         int
 		newName        string
-		newStatus      TaskStatus
+		newStatus      task.TaskStatus
 		expectedName   string
-		expectedStatus TaskStatus
+		expectedStatus task.TaskStatus
 		shouldUpdate   bool
 	}{
-		{"Update task name", 1, "Buy coffee", "", "Buy coffee", TODO, true},
-		{"Update task status", 1, "", DONE, "Test task", DONE, true},
-		{"Update non-existent task", 999, "New name", "", "Test task", TODO, false},
-		{"Update name and status", 1, "Complete project", IN_PROGRESS, "Complete project", IN_PROGRESS, true},
+		{"Update task name", 1, "Buy coffee", "", "Buy coffee", task.TASK_STATUS_TODO, true},
+		{"Update task status", 1, "", task.TASK_STATUS_DONE, "Test task", task.TASK_STATUS_DONE, true},
+		{"Update non-existent task", 999, "New name", "", "Test task", task.TASK_STATUS_TODO, false},
+		{"Update name and status", 1, "Complete project", task.TASK_STATUS_IN_PROGRESS, "Complete project", task.TASK_STATUS_IN_PROGRESS, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileName := "test_update_task.json"
-			defer os.Remove(fileName)
+			defer os.Remove(filePath)
+			task.AddTask("Test task")
+			task.UpdateTask(tt.taskID, tt.newName, tt.newStatus)
 
-			addTask("Test task", fileName)
-			updateTask(tt.taskID, tt.newName, tt.newStatus, fileName)
-
-			var tasks []Task
-			loadTasks(fileName, &tasks)
+			var tasks []task.Task
+			task.LoadTasks(&tasks)
 
 			if tt.shouldUpdate {
 				if tasks[0].Name != tt.expectedName {
@@ -98,15 +98,13 @@ func TestDeleteTask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileName := "test_delete_task.json"
-			defer os.Remove(fileName)
+			defer os.Remove(filePath)
+			task.AddTask("Task 1")
+			task.AddTask("Task 2")
+			task.DeleteTask(tt.deleteID)
 
-			addTask("Task 1", fileName)
-			addTask("Task 2", fileName)
-			deleteTask(tt.deleteID, fileName)
-
-			var tasks []Task
-			loadTasks(fileName, &tasks)
+			var tasks []task.Task
+			task.LoadTasks(&tasks)
 
 			if len(tasks) != tt.expectedCount {
 				t.Errorf("Expected %d tasks, got %d", tt.expectedCount, len(tasks))
@@ -118,36 +116,36 @@ func TestDeleteTask(t *testing.T) {
 func TestListTask(t *testing.T) {
 	tests := []struct {
 		name              string
-		filter            TaskStatus
-		setupTasks        func(string)
+		filter            task.TaskStatus
+		setupTasks        func()
 		expectedDoneCount int
 	}{
 		{
 			"List all tasks",
 			"",
-			func(f string) {
-				addTask("Task 1", f)
-				addTask("Task 2", f)
+			func() {
+				task.AddTask("Task 1")
+				task.AddTask("Task 2")
 			},
 			0,
 		},
 		{
 			"List DONE tasks",
-			DONE,
-			func(f string) {
-				addTask("Task 1", f)
-				addTask("Task 2", f)
-				updateTask(1, "", DONE, f)
+			task.TASK_STATUS_DONE,
+			func() {
+				task.AddTask("Task 1")
+				task.AddTask("Task 2")
+				task.UpdateTask(1, "", task.TASK_STATUS_DONE)
 			},
 			1,
 		},
 		{
 			"List TODO tasks",
-			TODO,
-			func(f string) {
-				addTask("Task 1", f)
-				addTask("Task 2", f)
-				updateTask(1, "", DONE, f)
+			task.TASK_STATUS_TODO,
+			func() {
+				task.AddTask("Task 1")
+				task.AddTask("Task 2")
+				task.UpdateTask(1, "", task.TASK_STATUS_DONE)
 			},
 			0,
 		},
@@ -155,23 +153,21 @@ func TestListTask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileName := "test_list_task.json"
-			defer os.Remove(fileName)
-
-			tt.setupTasks(fileName)
-			result := listTasks(tt.filter, fileName)
+			defer os.Remove(filePath)
+			tt.setupTasks()
+			result := task.ListTasks(tt.filter)
 
 			if result == "" {
 				t.Error("Expected non-empty result")
 			}
 
-			var tasks []Task
-			loadTasks(fileName, &tasks)
+			var tasks []task.Task
+			task.LoadTasks(&tasks)
 
 			doneCount := 0
-			if tt.filter == DONE {
-				for _, task := range tasks {
-					if task.Status == DONE {
+			if tt.filter == task.TASK_STATUS_DONE {
+				for _, t := range tasks {
+					if t.Status == task.TASK_STATUS_DONE {
 						doneCount++
 					}
 				}
